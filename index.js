@@ -4,25 +4,38 @@ hexo.on('generateBefore', function () {
     return;
   }
   if (hexo.config.qcloudcos.onlypost) {
-    /* 只替换文章内静态资源 */
+    /* only replace static source on post */
     hexo.extend.filter.register('after_post_render', function (data) {
+      data.content = cosProcessImg.call(this, data.content);
       data.content = cosProcess.call(this, data.content);
       return data;
-    });
+    }, hexo.config.qcloudcos.priority);
   } else {
-    /* 替换全部静态资源 */
+    /* replace all static source */
     hexo.extend.filter.register('after_render:html', function (str, data) {
-      return cosProcess.call(this, str);
-    });
+      str = cosProcessImg.call(this, str);
+      str = cosProcess.call(this, str);
+      return str;
+    }, hexo.config.qcloudcos.priority);
+    /* restore img tag on post when set post_asset_folder */
+    if(hexo.config.post_asset_folder && hexo.config.qcloudcos.img){
+      hexo.extend.filter.register('after_post_render', function (data) {
+        data.content = restoreImg.call(this, data.content);
+        return data;
+      }, 9);
+      hexo.extend.filter.register('after_post_render', function (data) {
+        data.content = cosProcessImg.call(this, data.content);
+        return data;
+      }, hexo.config.qcloudcos.priority);
+    }
   }
 });
 
 function cosProcess(htmlContent) {
   let cosUrl = '\/\/' + hexo.config.qcloudcos.domain;
-  /* 排除 https:// http:// 或 // 等开头的网络资源 */
+  /* exclude external source with https:// http:// or // header */
   let regUrl = /^([a-zA-z]+:\/\/|\/\/)/gi;
-  /* 静态资源标签正则 */
-  let regImg = /<img(\s*?)src="(.*?)"(.*?)>/gi;
+  /* reg of static source tag */
   let regLink = /<link(.*?)href="(.*?)"(.*?)>/gi;
   let regScript = /<script(.*?)src="(.*?)"(.*?)>/gi;
   let regAudio = /<audio(.*?)src="(.*?)"(.*?)>/gi;
@@ -30,7 +43,6 @@ function cosProcess(htmlContent) {
   let regSource = /<source(.*?)src="(.*?)"(.*?)>/gi;
   let regTrack = /<track(.*?)src="(.*?)"(.*?)>/gi;
   let regArea  = /<area(.*?)href="(.*?)"(.*?)>/gi;
-  if(hexo.config.qcloudcos.img) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regImg);
   if(hexo.config.qcloudcos.link) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regLink);
   if(hexo.config.qcloudcos.script) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regScript);
   if(hexo.config.qcloudcos.audio) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regAudio);
@@ -38,14 +50,44 @@ function cosProcess(htmlContent) {
   if(hexo.config.qcloudcos.source) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regSource);
   if(hexo.config.qcloudcos.track) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regTrack);
   if(hexo.config.qcloudcos.area) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regArea);
-  /* 匹配静态资源src或href内容并替换 */
-  function replaceContent(htmlContent, cosUrl, regUrl, regTag){
-    htmlContent = htmlContent.replace(regTag, (str, p1, p2) => {
-      if(!p2.match(regUrl)) str = str.replace(p2, cosUrl + p2);
-      return str;
-    });
-    return htmlContent;
-  }
-  /* 返回全部替换后的内容 */
+  /* return all replaced content */
   return htmlContent;
+}
+
+function cosProcessImg(htmlContent) {
+  let cosUrl = '\/\/' + hexo.config.qcloudcos.domain;
+  /* exclude external source with https:// http:// or // header */
+  let regUrl = /^([a-zA-z]+:\/\/|\/\/)/gi;
+  /* reg of static source tag */
+  let regImg = /<img(\s*?)src="(.*?)"(.*?)>/gi;
+  if(hexo.config.qcloudcos.img) htmlContent = replaceContent(htmlContent, cosUrl, regUrl, regImg);
+  return htmlContent;
+}
+
+/* match src or href of static source tag and replace */
+function replaceContent(htmlContent, cosUrl, regUrl, regTag){
+  htmlContent = htmlContent.replace(regTag, (str, p1, p2) => {
+    if(!p2.match(regUrl)){
+      str = str.replace(p2, cosUrl + p2);
+      console.info("update static link as:-->" + cosUrl + p2);
+    }
+    return str;
+  });
+  return htmlContent;
+}
+
+/* restore img tag */
+function restoreImg(postContent){
+  let cosUrl = "\/\/" + hexo.config.qcloudcos.domain;
+  let regImg = /<img(\s*?)src="(.*?)"(.*?)>/gi;
+  let regCos = new RegExp("^(" + cosUrl + ")", "gi");
+  let regCosTag = new RegExp(cosUrl,"gi");
+  postContent = postContent.replace(regImg, (str, p1, p2) => {
+    if(p2.match(regCos)){
+      str = str.replace(regCosTag, '');
+      console.info("restore post img tag as:-->" + str);
+    }
+    return str;
+  });
+  return postContent;
 }
